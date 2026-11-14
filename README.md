@@ -124,6 +124,8 @@ Your account must be a **Creator or Business** account. No Facebook Page is need
 
 Instagram's API can't schedule posts. For a future slot, Claude uploads early and publishes at the slot, so keep Claude Code open until then.
 
+Some Meta apps refuse the direct upload for videos longer than about 32 s (`ProcessingFailedError`). Test with a Short-length file early. If yours does, `skills/instagram-upload/scripts/upload_url.py` publishes from a temporary public URL (a Cloudflare quick tunnel); Claude asks before opening one. The recipe is in `skills/instagram-upload/SKILL.md`.
+
 ### 6. Go
 
 Restart Claude Code, then:

@@ -41,7 +41,7 @@ If `config.json` is missing or still has the example values, stop and tell the u
    - **Hook:** the first sentence is the hook, a bold claim, question or contradiction in at most 8 words, because the swipe decision happens in the first second.
    - **Middle:** one idea, with a turn or a sarcastic beat every 10–15 s.
    - **Ending:** a call to action, then a final line that loops back into the opening, so replays feel seamless.
-   - **Length:** about 185 words for a minute. Measure with `$PY $R --script script.txt --out short.mp4 --voice <voice> --dry`, aim for 56–60 s, and trim or add until it fits.
+   - **Length:** about 185 words for a minute. Measure with `$PY $R --script script.txt --out short.mp4 --voice <voice> --dry`, aim for 56–60 s (pauses included), and trim or add until it fits. Run the dry run in the background: voice-service retries can push it past a 5-minute tool timeout.
 
 2. **Direct it.** Add delivery, shot, sound, drop and `*emphasis*` tags following anime-talking-short's directing guide. You are the screenwriter, cinematographer and editor:
    - **Coverage:** A-cam and B-cam, faces on a third, tele lens or rack focus on new locations.
@@ -80,8 +80,8 @@ If `config.json` is missing or still has the example values, stop and tell the u
      - Then 3–5 hashtags: `#Shorts`, 2–3 for the topic and 1 for the niche.
    - **Tags:** 8–12 tags (topic phrase, variants, channel name, creator name), under 500 characters.
    - **Category:** `23` Comedy, `24` Entertainment, `22` People & Blogs or `27` Education.
-   - **Publish slot:** `publish_at` is today at `publish_time` with `utc_offset`, because the same time every day beats picking the perfect hour. If that time has already passed, use `null` and publish now.
-   - **ig_caption:** the hook line, 1–2 lines of context, "Follow for a new one every day.", then **at most 5 hashtags**.
+   - **Publish slot:** `publish_at` is today at `publish_time` with `utc_offset`, because the same time every day beats picking the perfect hour. If that time has already passed, use `null` and publish now. If the user asks to publish "now", do that and skip the slot. Ask early if it is unclear: the YouTube uploader can't change a scheduled video afterwards (see step 8).
+   - **ig_caption:** write it as UTF-8 (emoji are fine, but don't print them in a Windows console). The hook line, 1–2 lines of context, a comment prompt ("Comment your pick 👇 and I'll read every single one."), "Follow for a new one every day.", then **at most 5 hashtags**.
 
 7. **Instagram kit,** in `$REPO/reels/`:
    - **Video:** `<date>-<slug>.mp4`.
@@ -93,15 +93,21 @@ If `config.json` is missing or still has the example values, stop and tell the u
    $UP short.mp4 --channel <youtube_channel> --privacy public [--publish-at <publish_at>] \
      --title "..." --description "..." --tags "..." --category NN
    ```
-   If `instagram_account` is set, also run this (in the background when `--at` is in the future):
-   ```bash
-   $IG short.mp4 --account <instagram_account> --caption-file reels/<date>-<slug>.txt --thumb-offset <t ms> [--at <publish_at>]
-   ```
+   If `instagram_account` is set, also post the Reel. **Pick the route by length:** some Meta apps refuse the direct upload above about 32 s (`ProcessingFailedError`, `bytes_transferred: 0`), and a Short is about 57 s. Check yours with a >32 s test early.
+   - **Up to ~30 s, or if your app accepts longer files: direct upload** (in the background when `--at` is in the future):
+     ```bash
+     $IG short.mp4 --account <instagram_account> --caption-file reels/<date>-<slug>.txt --thumb-offset <t ms> [--at <publish_at>]
+     ```
+   - **Longer videos, when the direct upload fails: the `video_url` route** with `$REPO/skills/instagram-upload/scripts/upload_url.py` through a temporary Cloudflare quick tunnel. A tunnel is a third-party relay, so **ask the user first, every time**, whatever `auto_publish` says. The full recipe (serve one randomly named copy, test the tunnel speed, publish, tear everything down) is in instagram-upload's SKILL.md.
+   - **Never post a shrunken or lower-quality copy as a fallback** (for example through instagram.com with a file squeezed under a browser tool's upload cap). If no route can publish the full-quality file, stop and give the user the files to post from their phone.
    - **Redo of a published video:** always ask first. The uploaders can't delete, so a redo leaves a duplicate the user must remove by hand.
    - **Missing login, wrong channel or wrong account:** stop and tell the user. Never upload anywhere else.
    - **Unexpectedly `privacy=private`:** the Google Cloud project is unverified. Tell the user to set the video to Public in YouTube Studio.
+   - **A scheduled YouTube video must go public now:** the uploader's login can't edit videos, and a second upload would leave a duplicate. Use YouTube Studio: the video's Visibility → Public → Save.
 
-9. **Report** in a few lines:
+9. **Verify live, then report.** Open both posts in a browser: the Short plays and is public, and the Reel shows the right caption and its cover in the profile grid (not black). If a browser tool reports several connected browsers, ask the user which one to use before any action.
+
+   **Report** in a few lines:
    - the YouTube and Instagram links with their schedule
    - the final script
    - the kit paths
