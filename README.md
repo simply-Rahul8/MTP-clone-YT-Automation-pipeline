@@ -15,7 +15,7 @@ Claude develops the script, directs the shots, renders, checks the frames, fixes
 ## What you get per video
 
 - **Script:** developed from your draft. The hook comes in the first second, there's a twist every 10–15 s, a call to action, and a last line that loops back into the opening. It's timed to 56–60 s.
-- **Voice:** a free neural voice (edge-tts) with **hype / normal / sarcastic** delivery per line, given a husky bass treatment.
+- **Voice:** one voice with a different mood per line (`excited`, `elated`, `relaxed`, `tired`, `bored`, `exhausted`, `hype`, `sarcastic`, `normal`), given a husky bass treatment. The default is the free edge-tts voice with subtle moods; the optional [Chatterbox](https://github.com/resemble-ai/chatterbox) engine (open source, MIT) clones that same voice and makes the moods itself, so high-pitched joy and a flat drawl sound like one person. See [Better voice](#better-voice-optional).
 - **Lip-sync:** mouth shapes come from the audio ([Rhubarb Lip Sync](https://github.com/DanielSWolf/rhubarb-lip-sync)), drawn onto your character at every pose's scale.
 - **Camera:** shots range from wide to extreme close-up, with eased push-ins, faces placed on a third, tele lens, rack focus, dutch angles and depth of field. Aspect ratios switch for effect (2.39 letterbox reveals, a 4:3 camcorder look).
 - **Edit:** hard cuts with a few motivated transitions (whip, zoom, glitch, fade).
@@ -133,6 +133,16 @@ Restart Claude Code, then:
 ```
 /script-to-short my rough take on why everyone quits the gym in February ...
 ```
+
+### Better voice (optional)
+
+The edge-tts voice is fast and free, but its moods are subtle, and pushing its pitch to fake an emotion either sounds like a different speaker or robotic. [Chatterbox](https://github.com/resemble-ai/chatterbox) (MIT) clones one voice and varies the emotion itself. It runs on a CPU, but slowly: about 13 minutes of generation per minute of speech. Every line is cached, so only changed lines are regenerated.
+
+```bash
+.venv/Scripts/python setup_chatterbox.py      # macOS / Linux: .venv/bin/python setup_chatterbox.py
+```
+
+This creates an isolated environment in `~/tts-lab` (or `$TTS_LAB`) with Python 3.11 and `chatterbox-tts`, and records a neutral 10 s reference clip of your configured `voice`. To clone a different voice, put a clean 8–12 s recording at `~/tts-lab/ref_voice.wav` first. The first render then downloads about 3 GB of model weights. From then on `--engine auto` (the default) uses Chatterbox; pass `--engine edge` to go back. Only clone a voice you have the right to use.
 
 ## How it works
 

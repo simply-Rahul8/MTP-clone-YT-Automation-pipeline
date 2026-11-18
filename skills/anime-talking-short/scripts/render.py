@@ -5,8 +5,11 @@ Run with the repo's .venv python (install.py sets it up: edge-tts, Pillow, numpy
 
 Screenplay markup. Tags other than pause/tone split the speech, so put them at sentence boundaries.
   [pause 1.0]                     silence in seconds ([pause] = 0.8)
+  [hold 2.0]                      a silent beat of its own: put [shot ...] before it to show a visual with no voice
   {AJ=A J}                        caption shows "AJ", the voice says "A J"
   [normal] [hype] [sarcastic]     delivery from here on
+  [excited] [elated]              high-pitched joy (elated is the highest); the SAME voice, only the pitch moves
+  [relaxed] [tired] [bored] [exhausted]   progressively lower, slower, flatter
   [shot frame=wide|med|cu|ecu move=<frame> pose=<name> bg=<name> aspect=9:16|4:5|1:1|4:3|2.39
         tilt=<deg> in=cut|whip|zoom|glitch|fade look=clean|cam]
                                   new shot at the next sentence; frame/pose/bg/aspect/look carry over,
@@ -23,6 +26,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 sys.path.insert(0, str(Path(__file__).parent))
 import sound  # noqa: E402
+import chatterbox_voice  # noqa: E402
 
 W, H, FPS, SR = 1080, 1920, 30, 24000  # SR divisible by FPS -> exact audio hop per frame
 CW, CH = 1440, 2560                    # stage canvas; poses and backgrounds are prepared at this size
@@ -30,7 +34,11 @@ CAPTION_Y = 1450
 ACCENT = (255, 214, 0)
 FONTS = ("C:/Windows/Fonts/ariblk.ttf", "/System/Library/Fonts/Supplemental/Arial Black.ttf", "/usr/share/fonts/truetype/msttcorefonts/Arial_Black.ttf",
          "C:/Windows/Fonts/impact.ttf", "C:/Windows/Fonts/arialbd.ttf", "DejaVuSans-Bold.ttf")
-TONES = {"normal": ("+8%", "+0Hz"), "hype": ("+16%", "+14Hz"), "sarcastic": ("-8%", "-12Hz")}
+# Edge-tts fallback voice: moods by the engine's own mild rate/pitch offsets (a post pitch-shift sounded robotic).
+# The default engine is Chatterbox (chatterbox_voice.py), which makes the moods itself with one cloned voice.
+TONES = {"normal": ("+8%", "+0Hz"), "hype": ("+16%", "+14Hz"), "sarcastic": ("-8%", "-12Hz"), "excited": ("+18%", "+20Hz"),
+         "elated": ("+12%", "+28Hz"), "relaxed": ("-4%", "-5Hz"), "tired": ("-10%", "-9Hz"), "bored": ("-28%", "-20Hz"),
+         "exhausted": ("-22%", "-24Hz")}
 FACE_SHARE = {"wide": 0, "med": 0.3, "cu": 0.55, "ecu": 0.85}  # face width as a share of the frame width
 FACE_DROP = {"wide": 0, "med": 0.9, "cu": 0.2, "ecu": 0.05}    # frame centre below the face centre, in face widths
 ASPECTS = {"9:16": 9 / 16, "4:5": 4 / 5, "1:1": 1.0, "4:3": 4 / 3, "2.39": 2.39}
@@ -75,6 +83,9 @@ def parse(text):
                 segs[-1]["pause"] += float(args[0]) if args else 0.8
         elif name in TONES:
             tone = name
+        elif name == "hold":  # a silent beat: carries the pending shot tags, no voice, `args[0]` seconds
+            segs.append({"text": "", "emph": [], "tone": tone, "pause": float(args[0]) if args else 1.0, "marks": marks, "silent": True})
+            marks = []
         elif name in ("shot", "sfx", "drop"):
             marks.append((name, args))
         else:
@@ -101,15 +112,25 @@ async def speak(text, voice, rate, pitch):
     sys.exit("edge-tts returned no audio after 8 tries; the Microsoft voice service is down or blocking, try again later")
 
 
-def voice_track(segs, says, voice, wav):
+def voice_track(segs, says, voice, wav, engine="edge"):
     """Speak each segment in its tone, join with exact silences. Sets seg t/end. -> seconds, [(start, end, word)]"""
     pcm, words, t, emph_t = [], [], 0.0, set()
+    if engine == "chatterbox":
+        chatterbox_voice.prepare(segs)  # all lines in one model session, cached
     for seg in segs:
-        mp3, ws = asyncio.run(speak(seg["text"], voice, *TONES[seg["tone"]]))
-        raw = subprocess.run([ffmpeg(), "-v", "error", "-i", "pipe:0", "-f", "s16le", "-ac", "1", "-ar", str(SR), "-"],
-                             input=mp3, capture_output=True, check=True).stdout
+        if seg.get("silent"):
+            seg["t"] = seg["end"] = t
+            pcm.append(np.zeros(int(seg["pause"] * SR), np.int16))
+            t += seg["pause"]
+            continue
+        if engine == "chatterbox":
+            full, ws = chatterbox_voice.segment(seg, SR, ffmpeg())
+        else:
+            mp3, ws = asyncio.run(speak(seg["text"], voice, *TONES[seg["tone"]]))
+            full = np.frombuffer(subprocess.run([ffmpeg(), "-v", "error", "-i", "pipe:0", "-f", "s16le", "-ac", "1", "-ar", str(SR), "-"],
+                                                input=mp3, capture_output=True, check=True).stdout, np.int16)
         lead = max(0.0, ws[0][0] - 0.04)  # trim the service's silence at both ends: tight pacing, exact pauses
-        x = np.frombuffer(raw, np.int16)[int(lead * SR): int((ws[-1][1] + 0.12) * SR)]
+        x = full[int(lead * SR): int((ws[-1][1] + 0.12) * SR)]
         off = t - lead  # where the trimmed clip's time zero lands in the track
         seg["t"], seg["end"] = ws[0][0] + off, ws[-1][1] + off
         words += [(s + off, e + off, w) for s, e, w in ws]
@@ -335,7 +356,9 @@ def render(a):
     work.mkdir(parents=True, exist_ok=True)
     wav = str(work / "voice.wav")
     segs, says = parse(Path(a.script).read_text(encoding="utf-8").strip())
-    seconds, words, emph = voice_track(segs, says, a.voice, wav)
+    engine = a.engine if a.engine != "auto" else ("chatterbox" if chatterbox_voice.available() else "edge")
+    print(f"voice engine: {engine}", flush=True)
+    seconds, words, emph = voice_track(segs, says, a.voice, wav, engine)
     print(f"voice {seconds:.1f}s, {len(words)} caption words, {len(segs)} segments", flush=True)
     if a.dry:
         return
@@ -462,7 +485,7 @@ def render(a):
             d.text((100, top + 80), "REC", font=font_for(48), fill="white", anchor="ls")
             d.text((W - 48, H - top - 40), f"00:{int(t) // 60:02d}:{int(t) % 60:02d}:{i % FPS:02d}", font=font_for(44), fill="white", anchor="rs")
         ci = bisect.bisect_right(starts, t) - 1
-        if ci >= 0 and t < chunks[ci][-1][1] + 1.2:  # hold through a forced pause
+        if ci >= 0 and t < chunks[ci][-1][1] + 1.2 and sh["t"] <= chunks[ci][-1][1] + 0.05:  # hold through a forced pause, not into a new (silent) shot
             bar = (H - pic_h) / 2
             draw_caption(frame, chunks[ci], t, CAPTION_Y if bar < 200 else H - bar / 2 + 36, big[ci])
         enc.stdin.write(frame.tobytes())
@@ -484,6 +507,9 @@ def selftest():
     assert [(s["text"], s["tone"], s["pause"]) for s in segs] == [("I am A J.", "hype", 1.0), ("Hi", "sarcastic", 0.0), ("there", "sarcastic", 0.0)], segs
     assert segs[1]["marks"] == [("shot", ["frame=cu", "move=ecu"]), ("sfx", ["boom"])] and segs[2]["marks"] == [("drop", [])], segs
     assert says == [(["A", "J"], "AJ")]
+    h = parse("A. [shot pose=x] [hold 2] B.")[0]
+    assert [(g["text"], g["pause"], bool(g.get("silent"))) for g in h] == [("A.", 0.0, False), ("", 2.0, True), ("B.", 0.0, False)], h
+    assert h[1]["marks"] == [("shot", ["pose=x"])] and h[2]["marks"] == [], h
     e = parse("This is *the plan*.")[0][0]
     assert e["text"] == "This is the plan." and e["emph"] == ["the", "plan"], e
     ew = [(0.0, 0.2, "This"), (0.2, 0.4, "is"), (0.4, 0.6, "the"), (0.6, 0.9, "plan.")]
@@ -504,7 +530,8 @@ if __name__ == "__main__":
     p.add_argument("--out", default="short.mp4")
     p.add_argument("--char", default=str(REPO / "my" / "built"), help="folder with poses/ and backgrounds/ from build_poses.py")
     p.add_argument("--music", help="background music file")
-    p.add_argument("--voice", default="en-US-AndrewNeural")
+    p.add_argument("--engine", choices=["auto", "chatterbox", "edge"], default="auto", help="voice engine: cloned Chatterbox (slow, natural moods), edge-tts, or auto = Chatterbox when set up")
+    p.add_argument("--voice", default="en-US-AndrewNeural", help="edge-tts voice (engine edge)")
     p.add_argument("--dry", action="store_true", help="only make the voice and print its length (for tuning script length)")
     p.add_argument("--selftest", action="store_true")
     a = p.parse_args()

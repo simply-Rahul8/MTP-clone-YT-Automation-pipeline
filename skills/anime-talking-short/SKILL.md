@@ -23,6 +23,7 @@ These are listed at the top of render.py. Any tag except pause and tone starts a
 | `[pause 1.0]` | Silence after this sentence. |
 | `{AJ=A J}` | The caption shows "AJ" while the voice says "A J". Use it for the creator's name (from config.json) and words the voice gets wrong. |
 | `[normal]` `[hype]` `[sarcastic]` | Delivery from here on. Hype is faster and higher; sarcastic is slower and lower. |
+| `[excited]` `[elated]` `[relaxed]` `[tired]` `[bored]` `[exhausted]` | Moods of one voice, from clearly high-pitched joy (`elated` is the highest) down to a flat, slow drawl (`exhausted`). With the Chatterbox engine the model itself makes the mood (see `CB_TONES` in `chatterbox_voice.py`); with edge-tts they are mild rate and pitch offsets. Measured median pitch with Chatterbox: elated 183 Hz, excited ~155, sarcastic ~122, normal ~111, relaxed ~110, tired ~107, exhausted ~101, bored ~88. |
 | `[shot frame=… move=… pose=… bg=… aspect=… tilt=… in=… look=…]` | A new shot at the next sentence. `frame`, `pose`, `bg`, `aspect` and `look` carry over to later shots; `move`, `tilt` and `in` apply to that shot only. |
 | `[sfx whoosh boom riser hit pop tick scratch glitch beep]` | Sound at the next sentence. A riser ends there instead of starting there. |
 | `[drop]` | The music cuts out in the gap before the next sentence and slams back with a boom. |
@@ -81,6 +82,14 @@ $PY {{REPO}}/skills/anime-talking-short/scripts/build_poses.py {{REPO}}/my/sheet
 - **Hidden mouth:** a pose scoring below 0.45 (a hand over the mouth, for example) gets no lip-sync, and its face position is only a guess.
 - **The sheet:** a two-figure sheet of the character, closed mouth on the left and open mouth on the right. Its pixel calibration lives in `my/sheet.json` (template: `my/sheet.example.json`); `--check` draws it on the sheet for review.
 - **Check:** after building, view the mouths of a pose pasted on a bright background.
+
+## Voice engines (`--engine auto|chatterbox|edge`, default auto)
+
+- **chatterbox (used by auto once set up):** the open-source (MIT) Chatterbox model with one voice cloned from `<lab>/ref_voice.wav`, a neutral 10 s clip. Moods come from the model, not from pitch-shifting. Set it up once with `python setup_chatterbox.py` (see the README): it creates an isolated env in `~/tts-lab` (or `$TTS_LAB`) with `chatterbox-tts` and builds the reference clip from your `voice`. Model weights are about 3 GB and download on the first render.
+- **Speed:** about 12x slower than real time on a CPU (roughly 13 minutes per minute of speech), so run it in the background. Lines are cached by text, tone and reference in `<lab>/cache`, so a re-render that only changes visuals is free and a changed line costs about 35 s.
+- **Quirks:** it adds an inaudible Perth watermark (built in). It has no word timestamps, so `chatterbox_voice.estimate_words` anchors the words to the clip's real pauses (mean error about 50 ms). The spelled-out name is sent as `A. J.` so the model says the letters. The setup pins `setuptools<81` because the watermarker needs `pkg_resources`.
+- **edge:** the free edge-tts voice with mild engine rate and pitch offsets per tone. Fast and reliable, but moods are subtle. Do not post-shift its pitch: that sounds robotic.
+- **Never run two renders into the same output folder at once:** they corrupt each other's mp4. After a render, `ffmpeg -v error -i short.mp4 -f null -` must print nothing.
 
 ## Sound (`scripts/sound.py`)
 

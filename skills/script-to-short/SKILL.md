@@ -41,19 +41,20 @@ If `config.json` is missing or still has the example values, stop and tell the u
    - **Hook:** the first sentence is the hook, a bold claim, question or contradiction in at most 8 words, because the swipe decision happens in the first second.
    - **Middle:** one idea, with a turn or a sarcastic beat every 10–15 s.
    - **Ending:** a call to action, then a final line that loops back into the opening, so replays feel seamless.
-   - **Length:** about 185 words for a minute. Measure with `$PY $R --script script.txt --out short.mp4 --voice <voice> --dry`, aim for 56–60 s (pauses included), and trim or add until it fits. Run the dry run in the background: voice-service retries can push it past a 5-minute tool timeout.
+   - **Length:** about 185 words for a minute. Measure with `$PY $R --script script.txt --out short.mp4 --voice <voice> --dry`, aim for 56–60 s (pauses included), and trim or add until it fits. Run the dry run in the background: voice-service retries can push it past a 5-minute tool timeout. With the Chatterbox engine the dry run generates every line (about 13 minutes per minute of speech on a CPU) and caches them, so the later render reuses them. Slower moods (`relaxed`, `tired`, `exhausted`) lengthen the video.
 
 2. **Direct it.** Add delivery, shot, sound, drop and `*emphasis*` tags following anime-talking-short's directing guide. You are the screenwriter, cinematographer and editor:
    - **Coverage:** A-cam and B-cam, faces on a third, tele lens or rack focus on new locations.
    - **Emphasis:** 6–10 `*emphasis*` punch-ins.
    - **Transitions:** about 4, each with a reason.
    - **Poses:** chosen by meaning.
-   - **Reveals:** letterbox for them.
+   - **Reveals:** letterbox for them. On a big-face pose use `frame=cu` without `move=ecu`, or the push-in cuts the eyes off in the 2.39 strip.
+   - **Moods:** tag every line with the emotion the user wants and avoid long runs in one tone: `[excited]`/`[elated]` for high-pitched joy, `[relaxed]`, `[tired]`, `[exhausted]`, `[bored]` for a flat drawl, `[sarcastic]`, `[hype]`, `[normal]`. Map the user's bracketed hints such as `(high pitch)` or `(boring)` to these.
    - **Names:** only use pose and set names that exist in `$REPO/my/built/`.
 
 3. **Assets.** Reuse first. Generate new art only when the script truly needs it (a topic-specific set or a missing gesture). Follow the prompt rules in anime-talking-short ("Assets"), save into `$REPO/my/poses|backgrounds/`, rebuild, and check the importer's mouth scores (below 0.45 means no lip-sync for that pose).
 
-4. **Render.** This takes about 5–6 minutes per minute of video on a CPU, so run it in the background. The output is already at platform quality: 1080x1920 30 fps, H.264 High, AAC 384k, -14 LUFS.
+4. **Render.** This takes about 5–6 minutes per minute of video on a CPU (plus the Chatterbox voice generation if it isn't cached), so run it in the background. **Run one render per output folder at a time:** two overlapping renders write the same `short.mp4` and leave a damaged file. The output is already at platform quality: 1080x1920 30 fps, H.264 High, AAC 384k, -14 LUFS.
    ```bash
    $PY $R --script script.txt --out short.mp4 --voice <voice> [--music $REPO/<music>]
    ```
@@ -68,7 +69,8 @@ If `config.json` is missing or still has the example values, stop and tell the u
      - captions don't cover the mouth, and the emphasis words land
      - each pose fits its line
      - nothing is black or broken
-   - **Mouth:** tile 12 consecutive close-up frames and check that the mouth opens on the speech.
+   - **Mouth:** tile 12 consecutive close-up frames and check that the mouth opens on the speech. Correlating the timeline's mouth-open frames with the final audio's loudness should give a best lag of 0.
+   - **Integrity:** after every render, `$FF -v error -i short.mp4 -f null -` must print nothing. Only a full decode catches a half-written file.
    - **Fixing:** fix the screenplay tags first. Change code only for real bugs, and run `--selftest` after any change to code.
 
 6. **Marketing metadata.** Write `meta.json` with `title`, `description`, `tags`, `category`, `publish_at` and `ig_caption`.
@@ -88,12 +90,13 @@ If `config.json` is missing or still has the example values, stop and tell the u
    - **Caption:** `<date>-<slug>.txt` with `ig_caption`.
    - **Cover:** `<date>-<slug>-cover.jpg`, the strongest close-up with a giant emphasis caption, taken with `$FF -ss <t> -i short.mp4 -frames:v 1 -q:v 2 cover.jpg`. Keep `t` in ms for Instagram.
 
-8. **Publish.** If `auto_publish` is false, confirm with the user first.
+8. **Publish.** Open `short.mp4` for the user first so they can watch it. If `auto_publish` is false, confirm with the user before any upload.
    ```bash
    $UP short.mp4 --channel <youtube_channel> --privacy public [--publish-at <publish_at>] \
      --title "..." --description "..." --tags "..." --category NN
    ```
    If `instagram_account` is set, also post the Reel. **Pick the route by length:** some Meta apps refuse the direct upload above about 32 s (`ProcessingFailedError`, `bytes_transferred: 0`), and a Short is about 57 s. Check yours with a >32 s test early.
+   - **Tear down the tunnel right after publishing:** stop the `cloudflared` and `http.server` processes (match the process name AND its command line, never the command line alone, or you may kill unrelated shells), delete the served folder and check that the public URL now returns an error (502).
    - **Up to ~30 s, or if your app accepts longer files: direct upload** (in the background when `--at` is in the future):
      ```bash
      $IG short.mp4 --account <instagram_account> --caption-file reels/<date>-<slug>.txt --thumb-offset <t ms> [--at <publish_at>]
